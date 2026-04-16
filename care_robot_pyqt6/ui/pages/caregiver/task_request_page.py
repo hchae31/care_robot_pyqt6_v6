@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
 
+from models.transport_request import TransportRequest
 from services.task_request_service import DeliveryRequestService
 from session.session_manager import SessionManager
 from ui.widgets.common import InlineStatusMixin
@@ -26,15 +27,15 @@ class DeliveryItemsLoadWorker(QObject):
 class DeliverySubmitWorker(QObject):
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, payload):
+    def __init__(self, request: TransportRequest):
         super().__init__()
-        self.payload = payload
+        self.request = request
 
     def run(self):
         service = DeliveryRequestService()
 
         try:
-            success, message = service.submit_delivery_request(**self.payload)
+            success, message = service.submit_delivery_request(self.request)
             self.finished.emit(success, message)
         except Exception as exc:
             self.finished.emit(False, f"물품 요청 처리 중 오류가 발생했습니다.\n{exc}")
@@ -169,21 +170,21 @@ class DeliveryRequestForm(QWidget, InlineStatusMixin):
             self.show_inline_status("로그인 사용자 정보가 없습니다.", "warning")
             return
 
-        payload = {
-            "item_name": self.item_combo.currentText(),
-            "quantity": self.quantity_input.value(),
-            "destination": self.destination_combo.currentText(),
-            "priority": self.priority_combo.currentText(),
-            "detail": self.detail_input.toPlainText(),
-            "member_id": current_user.user_id,
-        }
+        request = TransportRequest(
+            item_name=self.item_combo.currentText(),
+            quantity=self.quantity_input.value(),
+            destination=self.destination_combo.currentText(),
+            priority=self.priority_combo.currentText(),
+            detail=self.detail_input.toPlainText(),
+            member_id=current_user.user_id,
+        )
 
         self.submit_btn.setEnabled(False)
         self.submit_btn.setText("등록 중...")
         print("[task_request] delivery submit started")
 
         self.submit_thread = QThread(self)
-        self.submit_worker = DeliverySubmitWorker(payload)
+        self.submit_worker = DeliverySubmitWorker(request)
         self.submit_worker.moveToThread(self.submit_thread)
 
         self.submit_thread.started.connect(self.submit_worker.run)
