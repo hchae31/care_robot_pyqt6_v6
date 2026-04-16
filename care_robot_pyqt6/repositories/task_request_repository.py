@@ -1,4 +1,5 @@
 from db.connection import get_connection
+from models.transport_request import TransportRequest
 
 class DeliveryRequestRepository:
     def get_all_products(self):
@@ -48,19 +49,11 @@ class DeliveryRequestRepository:
             if own_conn:
                 conn.close()
 
-    def create_delivery_request(
-        self,
-        item_name,
-        quantity,
-        destination,
-        priority,
-        detail,
-        member_id
-    ):
+    def create_transport_request(self, request: TransportRequest):
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                product = self.get_product_by_name(item_name, conn=conn)
+                product = self.get_product_by_name(request.item_name, conn=conn)
 
                 if not product:
                     conn.rollback()
@@ -69,7 +62,7 @@ class DeliveryRequestRepository:
                 product_id = product["PRODUCT_ID"]
                 current_qty = product["QUANTITY"]
 
-                if quantity > current_qty:
+                if request.quantity > current_qty:
                     conn.rollback()
                     return False, f"재고가 부족합니다. 현재 재고: {current_qty}"
 
@@ -80,15 +73,15 @@ class DeliveryRequestRepository:
                         UPDATED_AT = NOW()
                     WHERE PRODUCT_ID = %s
                 """
-                cur.execute(update_product_query, (quantity, product_id))
+                cur.execute(update_product_query, (request.quantity, product_id))
 
                 description = (
                     f"[물품 요청] "
-                    f"물품종류={item_name}, "
-                    f"수량={quantity}, "
-                    f"목적지={destination}, "
-                    f"우선순위={priority}, "
-                    f"설명={detail.strip() if detail and detail.strip() else '없음'}"
+                    f"물품종류={request.item_name}, "
+                    f"수량={request.quantity}, "
+                    f"목적지={request.destination}, "
+                    f"우선순위={request.priority}, "
+                    f"설명={request.detail.strip() if request.detail and request.detail.strip() else '없음'}"
                 )
 
                 event_query = """
@@ -100,7 +93,7 @@ class DeliveryRequestRepository:
                     )
                     VALUES (%s, NOW(), %s, %s)
                 """
-                cur.execute(event_query, (description, str(member_id), 1))
+                cur.execute(event_query, (description, str(request.member_id), 1))
 
                 robot_event_query = """
                     INSERT INTO robot_event (
